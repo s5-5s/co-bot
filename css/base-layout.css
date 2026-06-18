@@ -1,0 +1,78 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--page-bg);
+}
+
+canvas {
+  display: block;
+}
+
+.base-layout {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--ui-side-width) var(--ui-center-width) var(--ui-side-width);
+  pointer-events: none;
+  font-family: var(--ui-font);
+  font-size: var(--ui-text-size);
+  color: var(--ui-red);
+}
+
+.data-out,
+.data-in {
+  margin-top: var(--ui-top);
+  padding: var(--ui-pad);
+  box-sizing: border-box;
+}
+
+.data-out { grid-column: 1; }
+.model-view { grid-column: 2; }
+.data-in { grid-column: 3; }
+
+.joints-out,
+.target-in {
+  display: grid;
+  gap: var(--ui-gap);
+  width: 100%;
+  min-width: 0;
+  padding: var(--ui-pad);
+  box-sizing: border-box;
+  border: 0;
+  background: var(--ui-bg);
+  pointer-events: auto;
+  overflow: visible;
+}
+
+.joints-out {
+  align-content: start;
+  white-space: nowrap;
+}
+
+.data-name {
+  color: var(--ui-red);
+}
+
+.data-value {
+  color: var(--ui-yellow);
+}
+
+.target-in input,
+.target-in button {
+  width: 100%;
+  height: var(--ui-field-height);
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-field-border);
+  background: var(--ui-field-bg);
+  color: var(--ui-yellow);
+  font: inherit;
+  outline: none;
+}
+
+.target-in button {
+  color: var(--ui-red);
+  cursor: pointer;
+}
