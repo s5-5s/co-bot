@@ -63,7 +63,7 @@ export default class Scene {
         const target = startPose?.position?.clone() ?? new THREE.Vector3();
         const targetQuaternion = startPose?.quaternion?.clone() ?? new THREE.Quaternion();
 
-        this.#targetMarker = new THREE.Mesh(new THREE.SphereGeometry(0.8, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+        this.#targetMarker = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
         this.#targetMarker.position.copy(target);
         this.#scene.add(this.#targetMarker);
 
