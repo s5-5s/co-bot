@@ -41,7 +41,6 @@ canvas {
   padding: var(--ui-pad);
   box-sizing: border-box;
   border: 0;
-  background: var(--ui-bg);
   pointer-events: auto;
   overflow: visible;
 }
