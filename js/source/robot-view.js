@@ -7,6 +7,15 @@ const TCP_COLORS = Object.freeze({
   reached: "#42d392",
   error: "#ff626e"
 });
+const ROBOT_FINISH = Object.freeze([
+  Object.freeze(["chassis", "#6f6f6f"]),
+  Object.freeze(["joint1", "#f7f7f7"]),
+  Object.freeze(["joint2", "#d0d0d0"]),
+  Object.freeze(["joint3", "#ffffff"]),
+  Object.freeze(["joint4", "#b8b8b8"]),
+  Object.freeze(["joint5", "#ededed"]),
+  Object.freeze(["joint6", "#fafafa"])
+]);
 
 export default class RobotView {
   constructor(simulation, commandPose, joints) {
@@ -27,6 +36,7 @@ export default class RobotView {
     this.tcpState = "";
     this.commandVisible = false;
     this.destroyed = false;
+    this.applyModernFinish();
   }
 
   static async create(container, joints, options = {}) {
@@ -108,6 +118,13 @@ export default class RobotView {
     this.tcpState = state;
   }
 
+  applyModernFinish() {
+    for (let index = 0; index < ROBOT_FINISH.length; index += 1) {
+      const [name, color] = ROBOT_FINISH[index];
+      this.simulation.setNodeAppearance(name, { color });
+    }
+  }
+
   fitCamera() {
     this.assertActive();
     this.simulation.fitCamera();
@@ -125,4 +142,4 @@ export default class RobotView {
   }
 }
 
-export { METERS_TO_MILLIMETERS, TCP_COLORS };
+export { METERS_TO_MILLIMETERS, ROBOT_FINISH, TCP_COLORS };
