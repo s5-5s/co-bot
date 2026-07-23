@@ -1,63 +1,140 @@
+const AXES = Object.freeze(["x", "y", "z"]);
+const STATUS_LABELS = Object.freeze({
+  loading: "Загрузка",
+  ready: "Готов",
+  moving: "Движение",
+  reached: "Цель достигнута",
+  error: "Ошибка"
+});
+
+const formatFixed = (value, digits) => Number.isFinite(value) ? value.toFixed(digits) : "—";
+
 export default class UI {
-    #joints = undefined;
-    #command = undefined;
-    #targetDraft = { x: 0, y: 0, z: 0 };
+  constructor(root = document) {
+    this.root = root;
+    this.form = root.getElementById("target-form");
+    this.status = root.getElementById("app-status");
+    this.notice = root.getElementById("app-notice");
+    this.errorValue = root.getElementById("position-error");
+    this.submitButton = root.getElementById("target-submit");
+    this.homeButton = root.getElementById("target-home");
+    this.fitButton = root.getElementById("camera-fit");
+    this.inputs = AXES.map((axis) => root.getElementById(`target-${axis}`));
+    this.positionValues = AXES.map((axis) => root.getElementById(`current-${axis}`));
+    this.jointValues = Array.from({ length: 6 }, (_, index) => root.getElementById(`joint${index + 1}-value`));
+    this.targetHandler = null;
+    this.homeHandler = null;
+    this.fitHandler = null;
+    this.cache = new Map();
 
-    #current = {};
-    #jointElements = {};
-    #targetInputs = {};
-    #targetOk = undefined;
-    #targetReset = undefined;
+    this.handleSubmit = (event) => {
+      event.preventDefault();
+      const target = new Float64Array(3);
+      let valid = true;
 
-    constructor(joints) {
-        this.#joints = joints;
-        this.#current = Object.fromEntries(["x", "y", "z"].map((axis) => [axis, document.getElementById(`current-${axis}`)]));
-        this.#jointElements = Object.fromEntries(this.#joints.names.map((name) => [name, document.getElementById(`${name}-value`)]));
-        this.#targetInputs = Object.fromEntries(["x", "y", "z"].map((axis) => [axis, document.getElementById(`target-${axis}`)]));
-        this.#targetOk = document.getElementById("target-ok");
-        this.#targetReset = document.getElementById("target-reset");
+      for (let index = 0; index < this.inputs.length; index += 1) {
+        const input = this.inputs[index];
+        const value = input.value.trim() === "" ? NaN : Number(input.value);
+        const finite = Number.isFinite(value);
+        input.setAttribute("aria-invalid", String(!finite));
+        if (finite) target[index] = value;
+        else valid = false;
+      }
 
-        for (const axis of ["x", "y", "z"]) this.#targetInputs[axis].onchange = this.#targetChange(axis);
+      if (!valid) {
+        this.setNotice("Введите конечные числовые значения для X, Y и Z.", "error");
+        return;
+      }
 
-        this.#targetOk.onclick = this.#targetOkClick;
-        this.#targetReset.onclick = this.#targetResetClick;
+      this.targetHandler?.(target);
+    };
+
+    this.handleHome = () => this.homeHandler?.();
+    this.handleFit = () => this.fitHandler?.();
+
+    this.form.addEventListener("submit", this.handleSubmit);
+    this.homeButton.addEventListener("click", this.handleHome);
+    this.fitButton.addEventListener("click", this.handleFit);
+  }
+
+  onTarget(handler) {
+    this.targetHandler = handler;
+  }
+
+  onHome(handler) {
+    this.homeHandler = handler;
+  }
+
+  onFitCamera(handler) {
+    this.fitHandler = handler;
+  }
+
+  setLoading(loading) {
+    this.submitButton.disabled = loading;
+    this.homeButton.disabled = loading;
+    this.fitButton.disabled = loading;
+    for (let index = 0; index < this.inputs.length; index += 1) this.inputs[index].disabled = loading;
+
+    if (loading) {
+      this.setStatus("loading");
+      this.setNotice("Загружаем модель и готовим кинематику…", "info");
+    }
+  }
+
+  setTarget(target) {
+    for (let index = 0; index < this.inputs.length; index += 1) {
+      this.inputs[index].value = formatFixed(target[index], 2);
+      this.inputs[index].setAttribute("aria-invalid", "false");
+    }
+  }
+
+  setStatus(status) {
+    if (this.status.dataset.state === status) return;
+    this.status.dataset.state = status;
+    this.status.textContent = STATUS_LABELS[status] ?? STATUS_LABELS.ready;
+  }
+
+  setNotice(message = "", tone = "info") {
+    if (this.notice.textContent !== message) this.notice.textContent = message;
+    this.notice.dataset.tone = tone;
+  }
+
+  render(telemetry) {
+    const { position, angles, error, status, message, tone = "info" } = telemetry;
+    this.setStatus(status);
+    this.setNotice(message, tone);
+
+    for (let index = 0; index < 3; index += 1) {
+      this.write(this.positionValues[index], formatFixed(position[index], 2));
     }
 
-    consumeCommand = () => {
-        const command = this.#command;
-        this.#command = undefined;
-        return command;
-    };
-
-    setTarget = (point) => {
-        for (const axis of ["x", "y", "z"]) {
-            const value = point?.[axis] ?? 0;
-
-            this.#targetDraft[axis] = value;
-            this.#targetInputs[axis].value = value.toFixed(3);
-        }
-    };
-
-    setPoint(point) {
-        for (const axis of ["x", "y", "z"]) this.#current[axis].textContent = (point?.[axis] ?? 0).toFixed(3);
+    for (let index = 0; index < this.jointValues.length; index += 1) {
+      this.write(this.jointValues[index], formatFixed(angles[index] * 180 / Math.PI, 2));
     }
 
-    setAngles(angles) {
-        for (const name of this.#joints.names) this.#jointElements[name].textContent = ((angles[name] ?? 0) * this.#joints.toDeg).toFixed(2);
-    }
+    this.write(this.errorValue, `${formatFixed(error, 2)} мм`);
+  }
 
-    #targetChange = (axis) => (event) => {
-        const value = Number(event.target.value);
-        if (Number.isFinite(value)) this.#targetDraft[axis] = value;
-    };
+  showFatal(error) {
+    this.setLoading(true);
+    this.setStatus("error");
+    this.setNotice(error instanceof Error ? error.message : String(error), "error");
+  }
 
-    #targetOkClick = () => {
-        for (const axis of ["x", "y", "z"]) this.#targetChange(axis)({ target: this.#targetInputs[axis] });
+  destroy() {
+    this.form.removeEventListener("submit", this.handleSubmit);
+    this.homeButton.removeEventListener("click", this.handleHome);
+    this.fitButton.removeEventListener("click", this.handleFit);
+    this.targetHandler = null;
+    this.homeHandler = null;
+    this.fitHandler = null;
+  }
 
-        this.#command = { mode: "target", target: { ...this.#targetDraft } };
-    };
-
-    #targetResetClick = () => {
-        this.#command = { mode: "home" };
-    };
+  write(element, value) {
+    if (this.cache.get(element) === value) return;
+    this.cache.set(element, value);
+    element.textContent = value;
+  }
 }
+
+export { AXES, STATUS_LABELS };

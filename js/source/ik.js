@@ -1,251 +1,262 @@
-import * as THREE from "three";
+import {
+  distance3,
+  limit3,
+  rotateByQuaternion,
+  rotationErrorVector,
+  solveSymmetric3
+} from "./math.js";
+
+const LEGACY_TO_MILLIMETERS = 1000 / 15;
+const POSITION_ERROR_GAIN = 5;
+const POSITION_ERROR_LIMIT = 12 * LEGACY_TO_MILLIMETERS;
+const POSITION_DAMPING = 0.35 * LEGACY_TO_MILLIMETERS;
+const WRIST_ASSIST_GAIN = 0.015 / (LEGACY_TO_MILLIMETERS * LEGACY_TO_MILLIMETERS);
+const REACHABLE_ERROR = 5;
 
 export default class IK {
-    #joints = undefined;
-    #goalKey = "";
-    #goalAngles = null;
+  constructor(joints, view) {
+    this.joints = joints;
+    this.view = view;
+    this.goalAngles = joints.createState();
+    this.bestAngles = joints.createState();
+    this.velocity = joints.createState();
+    this.matrix = new Float64Array(9);
+    this.error = new Float64Array(3);
+    this.solution = new Float64Array(3);
+    this.axis = new Float64Array(3);
+    this.vector = new Float64Array(3);
+    this.rotationError = new Float64Array(3);
+    this.seedStates = Array.from({ length: 5 }, () => joints.createState());
+    this.lastKey = "";
+    this.lastError = Infinity;
+  }
 
-    constructor(joints) {
-        this.#joints = joints;
+  reset() {
+    this.lastKey = "";
+    this.lastError = Infinity;
+  }
+
+  solve(target, targetQuaternion, current) {
+    const key = `${target[0].toFixed(3)}:${target[1].toFixed(3)}:${target[2].toFixed(3)}:${Array.from(targetQuaternion, (value) => value.toFixed(5)).join(":")}`;
+    if (key === this.lastKey) return this.result();
+
+    this.prepareSeeds(current, target);
+    let bestCost = Infinity;
+    let bestError = Infinity;
+
+    for (let seedIndex = 0; seedIndex < this.seedStates.length; seedIndex += 1) {
+      const angles = this.seedStates[seedIndex];
+      this.solvePosition(angles, target);
+      this.solveOrientation(angles, targetQuaternion);
+
+      const snapshot = this.view.evaluatePose(angles);
+      const tcpOffset = this.joints.endEffectorIndex * 3;
+      const tcp = snapshot.positions.subarray(tcpOffset, tcpOffset + 3);
+      const error = distance3(tcp, target);
+      const cost = this.cost(angles, current, error);
+
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestError = error;
+        this.bestAngles.set(angles);
+      }
     }
 
-    calculate = ({ model, qActual, qCommand, qDotCommand, target, targetQuaternion, mode, dt }) => {
-        const current = this.#joints.cloneAngles(qCommand ?? qActual);
-        const velocity = this.#joints.cloneVelocity(qDotCommand);
+    this.goalAngles.set(this.bestAngles);
+    this.lastError = bestError;
+    this.lastKey = key;
+    return this.result();
+  }
 
-        if (!Number.isFinite(dt) || dt <= 0) {
-            return { angles: current, velocity, error: 0, rotationError: 0, homeError: 0 };
-        }
-
-        const goal = this.#goalByMode({ model, current: qActual ?? qCommand, target, targetQuaternion, mode });
-        const result = this.#joints.moveAnglesToGoal({ current, goal, velocity, dt });
-
-        model.setAngles(result.angles);
-
-        const pose = this.#pose(model);
-        const error = pose ? target.distanceTo(pose.position) : Infinity;
-        const homeError = this.#joints.maxAngleError(result.angles, goal);
-
-        return { angles: result.angles, velocity: result.velocity, error, rotationError: 0, homeError };
+  result() {
+    return {
+      angles: this.goalAngles,
+      error: this.lastError,
+      reachable: this.lastError <= REACHABLE_ERROR
     };
+  }
 
-    #goalByMode = (options) => {
-        if (options.mode === "home") {
-            this.#goalKey = "home";
-            this.#goalAngles = this.#joints.restAngles();
-            return this.#goalAngles;
-        }
+  prepareSeeds(current, target) {
+    const rest = this.joints.restAngles(this.seedStates[4]);
+    const base = -Math.atan2(target[2], target[0]);
+    this.seedStates[0].set(current);
 
-        const key = `${options.mode}:${options.target.x.toFixed(3)}:${options.target.y.toFixed(3)}:${options.target.z.toFixed(3)}`;
+    this.seedStates[1].set(rest);
+    this.seedStates[1][0] = base;
+    this.seedStates[1][2] = -90 * Math.PI / 180;
+    this.seedStates[1][3] = -40 * Math.PI / 180;
+    this.seedStates[1][4] = 65 * Math.PI / 180;
 
-        if (key !== this.#goalKey || !this.#goalAngles) {
-            this.#goalAngles = this.#createGoal(options);
-            this.#goalKey = key;
-        }
+    this.seedStates[2].set(rest);
+    this.seedStates[2][0] = base;
+    this.seedStates[2][1] = 20 * Math.PI / 180;
+    this.seedStates[2][2] = -120 * Math.PI / 180;
+    this.seedStates[2][3] = -40 * Math.PI / 180;
+    this.seedStates[2][4] = 85 * Math.PI / 180;
 
-        return this.#goalAngles;
-    };
+    this.seedStates[3].set(rest);
+    this.seedStates[3][0] = base;
+    this.seedStates[3][1] = -20 * Math.PI / 180;
+    this.seedStates[3][2] = -70 * Math.PI / 180;
+    this.seedStates[3][3] = -25 * Math.PI / 180;
+    this.seedStates[3][4] = 45 * Math.PI / 180;
+  }
 
-    #createGoal = (options) => {
-        const current = this.#joints.cloneAngles(options.current);
-        let best = null;
+  solvePosition(angles, target) {
+    for (let iteration = 0; iteration < this.joints.ik.goalIterations; iteration += 1) {
+      const snapshot = this.view.evaluatePose(angles);
+      const tcpOffset = this.joints.endEffectorIndex * 3;
+      const positions = snapshot.positions;
 
-        for (const seed of this.#seeds({ current, target: options.target })) {
-            const angles = this.#joints.cloneAngles(seed);
+      this.error[0] = (target[0] - positions[tcpOffset]) * POSITION_ERROR_GAIN;
+      this.error[1] = (target[1] - positions[tcpOffset + 1]) * POSITION_ERROR_GAIN;
+      this.error[2] = (target[2] - positions[tcpOffset + 2]) * POSITION_ERROR_GAIN;
+      limit3(this.error, POSITION_ERROR_LIMIT);
 
-            this.#solveStage({ ...options, angles });
-            options.model.setAngles(angles);
+      this.solveDls(snapshot, this.error, "arm", "positionWeight", POSITION_DAMPING, false);
 
-            const pose = this.#pose(options.model);
-            const candidate = { angles, cost: this.#cost({ angles, current, pose, target: options.target }) };
+      if (Math.hypot(this.error[0], this.error[1], this.error[2]) > this.joints.ik.wristAssistError) {
+        this.addWristAssist(snapshot);
+      }
 
-            if (!best || candidate.cost < best.cost) best = candidate;
-        }
+      this.applyVelocity(angles, 0.035);
+    }
+  }
 
-        return best?.angles ?? current;
-    };
+  solveOrientation(angles, targetQuaternion) {
+    for (let iteration = 0; iteration < this.joints.ik.orientationIterations; iteration += 1) {
+      const snapshot = this.view.evaluatePose(angles);
+      const quaternionOffset = this.joints.endEffectorIndex * 4;
+      const currentQuaternion = snapshot.quaternions.subarray(quaternionOffset, quaternionOffset + 4);
 
-    #solveStage = ({ model, angles, target, targetQuaternion }) => {
-        for (let i = 0; i < this.#joints.ik.goalIterations; i++) {
-            model.setAngles(angles);
+      rotationErrorVector(this.rotationError, currentQuaternion, targetQuaternion);
+      this.rotationError[0] *= 0.8;
+      this.rotationError[1] *= 0.8;
+      this.rotationError[2] *= 0.8;
+      limit3(this.rotationError, 0.8);
 
-            const pose = this.#pose(model);
-            if (!pose) return;
+      this.solveDls(snapshot, this.rotationError, "wrist", "orientationWeight", 0.6, true);
+      this.applyVelocity(angles, 0.03);
+    }
+  }
 
-            const error = target.clone().sub(pose.position);
-            const velocity = this.#dlsSolve({
-                columns: this.#jacobian(model).filter((column) => column.config.group === "arm").map((column) => ({ ...column, vector: column.linear })),
-                error: this.#joints.vectorLimit(error.multiplyScalar(5), 12),
-                damping: 0.35,
-                weightName: "positionWeight"
-            });
+  solveDls(snapshot, error, group, weightName, damping, angularOnly) {
+    const dampingSquared = damping * damping;
+    const matrix = this.matrix;
+    matrix.fill(0);
+    matrix[0] = dampingSquared;
+    matrix[4] = dampingSquared;
+    matrix[8] = dampingSquared;
+    this.velocity.fill(0);
 
-            if (error.length() > this.#joints.ik.wristAssistError) {
-                for (const column of this.#jacobian(model).filter((column) => column.config.group === "wrist")) {
-                    velocity[column.name] = (velocity[column.name] ?? 0) + column.linear.dot(error) * 0.015;
-                }
-            }
+    for (let index = 0; index < this.joints.count; index += 1) {
+      const config = this.joints.configs[index];
+      if (config.group !== group) continue;
 
-            this.#applyVelocity({ angles, velocity, dt: 0.035 });
-        }
+      this.columnVector(snapshot, index, angularOnly, this.vector);
+      const weight = config[weightName];
+      const x = this.vector[0];
+      const y = this.vector[1];
+      const z = this.vector[2];
 
-        if (!targetQuaternion) return;
+      matrix[0] += weight * x * x;
+      matrix[1] += weight * x * y;
+      matrix[2] += weight * x * z;
+      matrix[3] += weight * y * x;
+      matrix[4] += weight * y * y;
+      matrix[5] += weight * y * z;
+      matrix[6] += weight * z * x;
+      matrix[7] += weight * z * y;
+      matrix[8] += weight * z * z;
+    }
 
-        for (let i = 0; i < this.#joints.ik.goalOrientationIterations; i++) {
-            model.setAngles(angles);
+    solveSymmetric3(matrix, error, this.solution);
 
-            const pose = this.#pose(model);
-            if (!pose) return;
+    for (let index = 0; index < this.joints.count; index += 1) {
+      const config = this.joints.configs[index];
+      if (config.group !== group) continue;
 
-            const error = this.#joints.rotationErrorVector({ current: pose.quaternion, target: targetQuaternion });
-            const velocity = this.#dlsSolve({
-                columns: this.#jacobian(model).filter((column) => column.config.group === "wrist").map((column) => ({ ...column, vector: column.angular })),
-                error: this.#joints.vectorLimit(error.multiplyScalar(0.8), 0.8),
-                damping: 0.6,
-                weightName: "orientationWeight"
-            });
+      this.columnVector(snapshot, index, angularOnly, this.vector);
+      this.velocity[index] = config[weightName] * (
+        this.vector[0] * this.solution[0]
+        + this.vector[1] * this.solution[1]
+        + this.vector[2] * this.solution[2]
+      );
+    }
+  }
 
-            this.#applyVelocity({ angles, velocity, dt: 0.03 });
-        }
-    };
+  columnVector(snapshot, index, angularOnly, out) {
+    const axisOffset = index * 3;
+    const quaternionOffset = index * 4;
+    rotateByQuaternion(
+      this.axis,
+      this.joints.axes[axisOffset],
+      this.joints.axes[axisOffset + 1],
+      this.joints.axes[axisOffset + 2],
+      snapshot.quaternions,
+      quaternionOffset
+    );
 
-    #jacobian = (model) => {
-        const pose = this.#pose(model);
-        if (!pose) return [];
+    if (angularOnly) {
+      out.set(this.axis);
+      return out;
+    }
 
-        return this.#joints.names.flatMap((name) => {
-            const joint = model.joints[name];
-            const axis = model.axes[name];
-            if (!joint || !axis) return [];
+    const positionOffset = index * 3;
+    const tcpOffset = this.joints.endEffectorIndex * 3;
+    const rx = snapshot.positions[tcpOffset] - snapshot.positions[positionOffset];
+    const ry = snapshot.positions[tcpOffset + 1] - snapshot.positions[positionOffset + 1];
+    const rz = snapshot.positions[tcpOffset + 2] - snapshot.positions[positionOffset + 2];
 
-            const jointPosition = new THREE.Vector3();
-            const axisWorld = this.#axisWorld({ joint, axis });
+    out[0] = this.axis[1] * rz - this.axis[2] * ry;
+    out[1] = this.axis[2] * rx - this.axis[0] * rz;
+    out[2] = this.axis[0] * ry - this.axis[1] * rx;
+    return out;
+  }
 
-            joint.getWorldPosition(jointPosition);
+  addWristAssist(snapshot) {
+    for (let index = 0; index < this.joints.count; index += 1) {
+      if (this.joints.configs[index].group !== "wrist") continue;
+      this.columnVector(snapshot, index, false, this.vector);
+      this.velocity[index] += (
+        this.vector[0] * this.error[0]
+        + this.vector[1] * this.error[1]
+        + this.vector[2] * this.error[2]
+      ) * WRIST_ASSIST_GAIN;
+    }
+  }
 
-            return [{
-                name,
-                config: this.#joints.config(name),
-                linear: axisWorld.clone().cross(pose.position.clone().sub(jointPosition)),
-                angular: axisWorld
-            }];
-        });
-    };
+  applyVelocity(angles, dt) {
+    for (let index = 0; index < this.joints.count; index += 1) {
+      const config = this.joints.configs[index];
+      const maxVelocity = this.joints.motion.maxVelocity * config.velocityScale;
+      const value = this.joints.clamp(this.velocity[index], -maxVelocity, maxVelocity);
+      angles[index] = this.joints.clamp(angles[index] + value * dt, config.min, config.max);
+    }
+  }
 
-    #axisWorld = ({ joint, axis }) => {
-        const quaternion = new THREE.Quaternion();
-        joint.getWorldQuaternion(quaternion);
-        return axis.clone().normalize().applyQuaternion(quaternion).normalize();
-    };
+  cost(angles, current, positionError) {
+    let value = positionError * 7.5;
 
-    #pose = (model) => {
-        const endEffector = model.joints[this.#joints.endEffector] ?? model.object.getObjectByName(this.#joints.endEffector);
-        if (!endEffector) return null;
+    for (let index = 0; index < this.joints.count; index += 1) {
+      const config = this.joints.configs[index];
+      const range = Math.max(config.max - config.min, 1e-6);
+      const center = (config.min + config.max) * 0.5;
+      const limit = Math.abs((angles[index] - center) / (range * 0.5));
 
-        const position = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
-        model.object.updateMatrixWorld(true);
-        endEffector.getWorldPosition(position);
-        endEffector.getWorldQuaternion(quaternion);
+      value += Math.abs(this.joints.angleWrap(angles[index] - current[index])) * 0.8;
+      value += Math.abs(this.joints.angleWrap(angles[index] - config.rest)) * 0.25;
+      value += Math.max(0, limit - 0.75) ** 2 * 30;
+    }
 
-        return { position, quaternion };
-    };
-
-    #applyVelocity = ({ angles, velocity, dt }) => {
-        for (const name of this.#joints.names) {
-            const joint = this.#joints.config(name);
-            const maxVelocity = this.#joints.motion.maxVelocity * (joint.velocityScale ?? 1);
-            const value = this.#joints.clamp(velocity[name] ?? 0, -maxVelocity, maxVelocity);
-
-            angles[name] = this.#joints.clamp((angles[name] ?? 0) + value * dt, joint.min, joint.max);
-        }
-    };
-
-    #dlsSolve = ({ columns, error, damping, weightName }) => {
-        const matrix = [[damping * damping, 0, 0], [0, damping * damping, 0], [0, 0, damping * damping]];
-        const velocity = {};
-
-        for (const column of columns) {
-            const weight = column.config[weightName] ?? 1;
-            const vector = column.vector;
-
-            matrix[0][0] += weight * vector.x * vector.x; matrix[0][1] += weight * vector.x * vector.y; matrix[0][2] += weight * vector.x * vector.z;
-            matrix[1][0] += weight * vector.y * vector.x; matrix[1][1] += weight * vector.y * vector.y; matrix[1][2] += weight * vector.y * vector.z;
-            matrix[2][0] += weight * vector.z * vector.x; matrix[2][1] += weight * vector.z * vector.y; matrix[2][2] += weight * vector.z * vector.z;
-        }
-
-        const solved = this.#solve3(matrix, [error.x, error.y, error.z]);
-
-        for (const column of columns) {
-            const weight = column.config[weightName] ?? 1;
-            const vector = column.vector;
-
-            velocity[column.name] = weight * (vector.x * solved[0] + vector.y * solved[1] + vector.z * solved[2]);
-        }
-
-        return velocity;
-    };
-
-    #solve3 = (matrix, vector) => {
-        const a = matrix.map((row, i) => [...row, vector[i]]);
-
-        for (let i = 0; i < 3; i++) {
-            let pivot = i;
-
-            for (let j = i + 1; j < 3; j++) if (Math.abs(a[j][i]) > Math.abs(a[pivot][i])) pivot = j;
-
-            [a[i], a[pivot]] = [a[pivot], a[i]];
-
-            if (Math.abs(a[i][i]) < 1e-9) return [0, 0, 0];
-
-            for (let j = i + 1; j < 4; j++) a[i][j] /= a[i][i];
-
-            a[i][i] = 1;
-
-            for (let j = 0; j < 3; j++) {
-                if (j === i) continue;
-
-                const k = a[j][i];
-
-                for (let n = i; n < 4; n++) a[j][n] -= k * a[i][n];
-            }
-        }
-
-        return [a[0][3], a[1][3], a[2][3]];
-    };
-
-    #cost = ({ angles, current, pose, target }) => {
-        if (!pose) return Infinity;
-
-        let value = target.distanceTo(pose.position) * 500;
-
-        for (const name of this.#joints.names) {
-            const joint = this.#joints.config(name);
-            const range = Math.max(joint.max - joint.min, 1e-6);
-            const center = (joint.min + joint.max) * 0.5;
-            const limit = Math.abs((angles[name] - center) / (range * 0.5));
-
-            value += Math.abs(this.#joints.angleWrap(angles[name] - (current[name] ?? 0))) * 0.8;
-            value += Math.abs(this.#joints.angleWrap(angles[name] - (joint.rest ?? 0))) * 0.25;
-            value += Math.max(0, limit - 0.75) ** 2 * 30;
-        }
-
-        value += Math.max(0, Math.abs(angles.joint1 ?? 0) - 125 * Math.PI / 180) ** 2 * 60;
-        value += Math.max(0, -70 * Math.PI / 180 - (angles.joint2 ?? 0)) ** 2 * 90;
-
-        return value;
-    };
-
-    #seeds = ({ current, target }) => {
-        const rest = this.#joints.restAngles();
-        const base = -Math.atan2(target.z, target.x);
-
-        return [
-            this.#joints.cloneAngles(current),
-            { ...rest, joint1: base, joint2: 0, joint3: -90 * Math.PI / 180, joint4: -40 * Math.PI / 180, joint5: 65 * Math.PI / 180 },
-            { ...rest, joint1: base, joint2: 20 * Math.PI / 180, joint3: -120 * Math.PI / 180, joint4: -40 * Math.PI / 180, joint5: 85 * Math.PI / 180 },
-            { ...rest, joint1: base, joint2: -20 * Math.PI / 180, joint3: -70 * Math.PI / 180, joint4: -25 * Math.PI / 180, joint5: 45 * Math.PI / 180 },
-            rest
-        ];
-    };
+    value += Math.max(0, Math.abs(angles[0]) - 125 * Math.PI / 180) ** 2 * 60;
+    value += Math.max(0, -70 * Math.PI / 180 - angles[1]) ** 2 * 90;
+    return value;
+  }
 }
+
+export {
+  LEGACY_TO_MILLIMETERS,
+  POSITION_DAMPING,
+  REACHABLE_ERROR
+};

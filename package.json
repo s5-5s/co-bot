@@ -1,0 +1,10 @@
+{
+  "name": "co-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check js/index.js && node --test"
+  }
+}

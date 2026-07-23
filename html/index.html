@@ -1,47 +1,119 @@
+<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="UTF-8">
-    <title>co-bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#090b0d">
+    <title>co-bot · операторский пульт</title>
     <link rel="stylesheet" href="../css/index.css">
-
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.167.1/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.1/examples/jsm/"
-        }
-      }
-    </script>
-
     <script type="module" src="../js/index.js"></script>
   </head>
   <body>
-    <div class="base-layout">
-      <div class="data-out">
-        <div id="joints-out" class="joints-out">
-          <div><span class="data-name">current-x: </span><span id="current-x" class="data-value">0.000</span></div>
-          <div><span class="data-name">current-y: </span><span id="current-y" class="data-value">0.000</span></div>
-          <div><span class="data-name">current-z: </span><span id="current-z" class="data-value">0.000</span></div>
-          <div><span class="data-name">joint6: </span><span id="joint6-value" class="data-value">0.00</span></div>
-          <div><span class="data-name">joint5: </span><span id="joint5-value" class="data-value">0.00</span></div>
-          <div><span class="data-name">joint4: </span><span id="joint4-value" class="data-value">0.00</span></div>
-          <div><span class="data-name">joint3: </span><span id="joint3-value" class="data-value">0.00</span></div>
-          <div><span class="data-name">joint2: </span><span id="joint2-value" class="data-value">0.00</span></div>
-          <div><span class="data-name">joint1: </span><span id="joint1-value" class="data-value">0.00</span></div>
-        </div>
-      </div>
+    <main class="operator-shell">
+      <div id="sim-viewport" class="sim-viewport" aria-label="Трёхмерная модель манипулятора"></div>
 
-      <div class="model-view"></div>
-
-      <div class="data-in">
-        <div class="target-in">
-          <input id="target-x" inputmode="decimal" placeholder="target x">
-          <input id="target-y" inputmode="decimal" placeholder="target y">
-          <input id="target-z" inputmode="decimal" placeholder="target z">
-          <button id="target-ok">ок</button>
-          <button id="target-reset">сброс</button>
+      <header class="topbar">
+        <div class="brand" aria-label="co-bot">
+          <span class="brand-mark" aria-hidden="true">CO</span>
+          <span>
+            <strong>co-bot</strong>
+            <small>пульт оператора</small>
+          </span>
         </div>
-      </div>
-    </div>
+
+        <div class="system-state">
+          <span id="app-status" class="status-pill" data-state="loading" role="status">Загрузка</span>
+          <span class="unit-pill">XYZ · мм</span>
+        </div>
+      </header>
+
+      <section class="panel telemetry-panel" aria-labelledby="telemetry-title">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Обратная связь</span>
+            <h1 id="telemetry-title">Фактическая поза</h1>
+          </div>
+          <span class="live-dot" aria-hidden="true"></span>
+        </div>
+
+        <dl class="coordinate-grid">
+          <div>
+            <dt>X</dt>
+            <dd><span id="current-x">0.00</span><small>мм</small></dd>
+          </div>
+          <div>
+            <dt>Y</dt>
+            <dd><span id="current-y">0.00</span><small>мм</small></dd>
+          </div>
+          <div>
+            <dt>Z</dt>
+            <dd><span id="current-z">0.00</span><small>мм</small></dd>
+          </div>
+        </dl>
+
+        <div class="section-label">
+          <span>Суставы</span>
+          <span>градусы</span>
+        </div>
+
+        <dl class="joint-list">
+          <div><dt>J1</dt><dd id="joint1-value">0.00</dd></div>
+          <div><dt>J2</dt><dd id="joint2-value">0.00</dd></div>
+          <div><dt>J3</dt><dd id="joint3-value">0.00</dd></div>
+          <div><dt>J4</dt><dd id="joint4-value">0.00</dd></div>
+          <div><dt>J5</dt><dd id="joint5-value">0.00</dd></div>
+          <div><dt>J6</dt><dd id="joint6-value">0.00</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel control-panel" aria-labelledby="control-title">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Позиционирование</span>
+            <h2 id="control-title">Целевая точка</h2>
+          </div>
+          <button id="camera-fit" class="icon-button" type="button" title="Вписать модель" aria-label="Вписать модель в экран">
+            <span aria-hidden="true">⌗</span>
+          </button>
+        </div>
+
+        <form id="target-form" novalidate>
+          <div class="target-fields">
+            <label>
+              <span>X <small>мм</small></span>
+              <input id="target-x" name="x" type="number" inputmode="decimal" step="0.1" autocomplete="off" aria-invalid="false">
+            </label>
+            <label>
+              <span>Y <small>мм</small></span>
+              <input id="target-y" name="y" type="number" inputmode="decimal" step="0.1" autocomplete="off" aria-invalid="false">
+            </label>
+            <label>
+              <span>Z <small>мм</small></span>
+              <input id="target-z" name="z" type="number" inputmode="decimal" step="0.1" autocomplete="off" aria-invalid="false">
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="target-submit" class="button button-primary" type="submit">Переместить</button>
+            <button id="target-home" class="button button-secondary" type="button">Домой</button>
+          </div>
+        </form>
+
+        <div class="error-readout">
+          <span>Ошибка позиции</span>
+          <strong id="position-error">0.00 мм</strong>
+        </div>
+
+        <p id="app-notice" class="notice" data-tone="info" aria-live="polite">
+          Загружаем модель и готовим кинематику…
+        </p>
+      </section>
+
+      <footer class="viewport-hint" aria-hidden="true">
+        <span>ЛКМ</span> вращение
+        <i></i>
+        <span>Колесо</span> масштаб
+      </footer>
+    </main>
   </body>
 </html>
