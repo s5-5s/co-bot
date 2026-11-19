@@ -1,0 +1,48 @@
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <title>co-bot</title>
+    <link rel="stylesheet" href="./css/index.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.min.js",
+          "three/addons/loaders/GLTFLoader.js": "./vendor/three.min.js",
+          "three/addons/controls/OrbitControls.js": "./vendor/three.min.js"
+        }
+      }
+    </script>
+    <script type="module" src="./js/index.js"></script>
+  </head>
+  <body>
+    <div class="model-view"></div>
+    <div class="base-layout">
+      <div class="data-out">
+        <div id="joints-out" class="joints-out">
+          <div><span class="data-name">current-x: </span><span id="current-x" class="data-value">0.000</span></div>
+          <div><span class="data-name">current-y: </span><span id="current-y" class="data-value">0.000</span></div>
+          <div><span class="data-name">current-z: </span><span id="current-z" class="data-value">0.000</span></div>
+          <div id="joint-values"></div>
+        </div>
+      </div>
+
+      <div class="data-in">
+        <div class="target-in">
+          <div>
+            <label for="target-x"><span class="data-name">target-x: </span><output class="data-value">0.000</output></label>
+            <input type="range" id="target-x">
+          </div>
+          <div>
+            <label for="target-y"><span class="data-name">target-y: </span><output class="data-value">0.000</output></label>
+            <input type="range" id="target-y">
+          </div>
+          <div>
+            <label for="target-z"><span class="data-name">target-z: </span><output class="data-value">0.000</output></label>
+            <input type="range" id="target-z">
+          </div>
+          <button id="target-reset">сброс</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

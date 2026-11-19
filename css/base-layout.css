@@ -11,6 +11,7 @@ canvas {
 }
 
 .base-layout {
+  z-index: 1;
   position: fixed;
   inset: 0;
   display: grid;
@@ -29,7 +30,8 @@ canvas {
 }
 
 .data-out { grid-column: 1; }
-.model-view { grid-column: 2; }
+.model-view { position: fixed; inset: 0; z-index: 0; }
+.model-view canvas { pointer-events: auto; }
 .data-in { grid-column: 3; }
 
 .joints-out,
@@ -58,7 +60,56 @@ canvas {
   color: var(--ui-yellow);
 }
 
-.target-in input,
+.target-in > div {
+  display: grid;
+  gap: var(--ui-gap);
+}
+
+.target-in label {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.target-in input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: var(--ui-slider-thumb-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.target-in input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--ui-slider-track-height);
+  background: var(--ui-yellow);
+}
+
+.target-in input[type="range"]::-moz-range-track {
+  height: var(--ui-slider-track-height);
+  background: var(--ui-yellow);
+}
+
+.target-in input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--ui-slider-thumb-size);
+  height: var(--ui-slider-thumb-size);
+  margin-top: calc((var(--ui-slider-track-height) - var(--ui-slider-thumb-size)) / 2);
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-red);
+}
+
+.target-in input[type="range"]::-moz-range-thumb {
+  width: var(--ui-slider-thumb-size);
+  height: var(--ui-slider-thumb-size);
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-red);
+}
+
 .target-in button {
   width: 100%;
   height: var(--ui-field-height);
@@ -66,12 +117,12 @@ canvas {
   box-sizing: border-box;
   border: 1px solid var(--ui-field-border);
   background: var(--ui-field-bg);
-  color: var(--ui-yellow);
+  color: var(--ui-red);
   font: inherit;
-  outline: none;
+  cursor: pointer;
 }
 
-.target-in button {
-  color: var(--ui-red);
-  cursor: pointer;
+#joint-values {
+  display: grid;
+  gap: var(--ui-gap);
 }
