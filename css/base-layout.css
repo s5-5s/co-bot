@@ -58,19 +58,105 @@ canvas {
 
 .data-value {
   color: var(--ui-yellow);
+  font-variant-numeric: tabular-nums;
 }
 
-.target-in > div {
+#joint-values,
+.target-readout,
+.tcp-panel {
   display: grid;
   gap: var(--ui-gap);
 }
 
-.target-in label {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+.tcp-modes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ui-gap);
 }
 
-.target-in input[type="range"] {
+.tcp-mode,
+.target-in button {
+  min-width: 0;
+  height: var(--ui-field-height);
+  box-sizing: border-box;
+  border: 1px solid var(--ui-field-border);
+  background: var(--ui-field-bg);
+  color: var(--ui-red);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.tcp-mode:hover,
+.target-in button:hover {
+  border-color: var(--ui-yellow);
+  color: var(--ui-yellow);
+}
+
+.tcp-mode.is-active {
+  border-color: var(--ui-yellow);
+  color: var(--ui-yellow);
+}
+
+.tcp-xy {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-yellow);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.tcp-xy:hover {
+  box-shadow: inset 0 0 0 1px var(--ui-yellow);
+}
+
+.tcp-xy-axis {
+  position: absolute;
+  background: var(--ui-yellow);
+  pointer-events: none;
+}
+
+.tcp-xy-axis-x {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--ui-slider-track-height);
+  transform: translateY(-50%);
+}
+
+.tcp-xy-axis-y {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--ui-slider-track-height);
+  transform: translateX(-50%);
+}
+
+.tcp-xy-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--ui-slider-thumb-size);
+  height: var(--ui-slider-thumb-size);
+  border-radius: 50%;
+  background: var(--ui-red);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tcp-xy:hover .tcp-xy-thumb {
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.3);
+}
+
+.tcp-z {
+  display: grid;
+  gap: var(--ui-gap);
+}
+
+.tcp-z input[type="range"] {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -82,17 +168,17 @@ canvas {
   cursor: pointer;
 }
 
-.target-in input[type="range"]::-webkit-slider-runnable-track {
+.tcp-z input[type="range"]::-webkit-slider-runnable-track {
   height: var(--ui-slider-track-height);
   background: var(--ui-yellow);
 }
 
-.target-in input[type="range"]::-moz-range-track {
+.tcp-z input[type="range"]::-moz-range-track {
   height: var(--ui-slider-track-height);
   background: var(--ui-yellow);
 }
 
-.target-in input[type="range"]::-webkit-slider-thumb {
+.tcp-z input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: var(--ui-slider-thumb-size);
   height: var(--ui-slider-thumb-size);
@@ -102,7 +188,7 @@ canvas {
   background: var(--ui-red);
 }
 
-.target-in input[type="range"]::-moz-range-thumb {
+.tcp-z input[type="range"]::-moz-range-thumb {
   width: var(--ui-slider-thumb-size);
   height: var(--ui-slider-thumb-size);
   border: 0;
@@ -110,19 +196,40 @@ canvas {
   background: var(--ui-red);
 }
 
-.target-in button {
+.tcp-z input[type="range"]:hover::-webkit-slider-thumb,
+.tcp-z input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.3);
+}
+
+.tcp-z input[type="range"]:hover::-moz-range-thumb,
+.tcp-z input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.3);
+}
+
+#tcp-target label {
+  display: grid;
+  gap: calc(var(--ui-gap) / 2);
+}
+
+#tcp-target input {
   width: 100%;
   height: var(--ui-field-height);
   min-width: 0;
   box-sizing: border-box;
+  padding: 0 var(--ui-pad);
   border: 1px solid var(--ui-field-border);
+  outline: 0;
   background: var(--ui-field-bg);
-  color: var(--ui-red);
+  color: var(--ui-yellow);
   font: inherit;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
-#joint-values {
-  display: grid;
-  gap: var(--ui-gap);
+#tcp-target input:hover,
+#tcp-target input:focus {
+  border-color: var(--ui-yellow);
+}
+
+[hidden] {
+  display: none !important;
 }

@@ -1,14 +1,19 @@
 import config from './config.js';
 
+const applyDeadzone = (value, deadzone) => {
+    const magnitude = Math.abs(value);
+    if (magnitude <= deadzone) return 0;
+    return Math.sign(value) * (magnitude - deadzone) / (1 - deadzone);
+};
+
 export default class GamepadApi {
     gamepad = null;
+    #optionsPressed = false;
 
-    constructor(onTarget, onCamera, onReset) {
-        this.onTarget = onTarget;
+    constructor(onJog, onCamera, onReset) {
+        this.onJog = onJog;
         this.onCamera = onCamera;
         this.onReset = onReset;
-        this.targetElapsed = 0;
-        this.optionsPressed = false;
     }
 
     update(dt) {
@@ -21,43 +26,23 @@ export default class GamepadApi {
                 break;
             }
         }
-
         if (!this.gamepad) {
-            this.optionsPressed = false;
-            this.targetElapsed = 0;
+            this.#optionsPressed = false;
             return;
         }
 
         const { axes, buttons } = this.gamepad;
         if (axes.length < 4 || buttons.length < 10) return;
 
-        const { deadzone, targetSpeed, cameraSpeed, zoomSpeed, targetInterval } = config.gamepad;
-        const axis = value => Math.sign(value) *
-            Math.max(0, (Math.abs(value) - deadzone) / (1 - deadzone));
+        const { deadzone, cameraSpeed, zoomSpeed } = config.gamepad;
+        const leftX = applyDeadzone(axes[0], deadzone);
+        const leftY = applyDeadzone(axes[1], deadzone);
+        const rightX = applyDeadzone(axes[2], deadzone);
+        const rightY = applyDeadzone(axes[3], deadzone);
+        const z = applyDeadzone(buttons[7].value - buttons[6].value, deadzone);
 
-        const leftX = axis(axes[0]);
-        const leftY = axis(axes[1]);
-        const rightX = axis(axes[2]);
-        const rightY = axis(axes[3]);
-        const z = axis(buttons[7].value - buttons[6].value);
-
-        const optionsPressed = buttons[9].pressed;
-        if (optionsPressed && !this.optionsPressed) this.onReset();
-        this.optionsPressed = optionsPressed;
-
-        // IK — только при ненулевом вводе и максимум ~30 раз в секунду.
         if (leftX || leftY || z) {
-            this.targetElapsed += dt;
-            if (this.targetElapsed >= targetInterval) {
-                this.onTarget(
-                    leftX * targetSpeed * this.targetElapsed,
-                    -leftY * targetSpeed * this.targetElapsed,
-                    z * targetSpeed * this.targetElapsed
-                );
-                this.targetElapsed = 0;
-            }
-        } else {
-            this.targetElapsed = 0;
+            this.onJog(leftX, -leftY, z, dt);
         }
 
         const zoom = Number(buttons[5].pressed) - Number(buttons[4].pressed);
@@ -65,8 +50,14 @@ export default class GamepadApi {
             this.onCamera(
                 rightX * cameraSpeed * dt,
                 -rightY * cameraSpeed * dt,
-                zoom * zoomSpeed * dt
+                zoom * zoomSpeed * dt,
             );
         }
+
+        const optionsPressed = buttons[9].pressed;
+        if (optionsPressed && !this.#optionsPressed) {
+            this.onReset();
+        }
+        this.#optionsPressed = optionsPressed;
     }
 }

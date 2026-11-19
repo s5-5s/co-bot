@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import config from './config.js';
+import { clamp } from './math.js';
 import Scene from './scene.js';
 import Robot from './robot.js';
 import RobotController from './controller.js';
@@ -8,7 +9,6 @@ import GamepadApi from './gamepad-api.js';
 import UI from './ui.js';
 
 /**
- * Загружает GLTF-модель по указанному пути.
  * @param {string} path
  * @returns {Promise<import('three/addons/loaders/GLTFLoader.js').GLTF>}
  */
@@ -34,9 +34,9 @@ async function bootstrap() {
             child.receiveShadow = true;
         }
     });
+
     const robot = new Robot(gltf.scene);
     const controller = new RobotController(robot);
-
     scene.add(robot.object);
     scene.add(controller.ghost.object);
 
@@ -44,13 +44,31 @@ async function bootstrap() {
     const initialTcpPos = controller.getCurrentTcpRobotPosition(tcpPositionBuffer).clone();
     const targetPosition = initialTcpPos.clone();
 
+    let ui;
+
     const resetRobot = () => {
         controller.goHome();
         targetPosition.copy(initialTcpPos);
         ui.setTargetPosition(targetPosition);
     };
 
-    const ui = new UI({
+    const jogRobot = (x, y, z, dt) => {
+        if (ui.mode === 'target') return;
+
+        const distance = config.control.jogSpeed * dt;
+        const position = controller.jog(
+            x * distance,
+            y * distance,
+            z * distance,
+            ui.mode,
+        );
+
+        targetPosition.copy(position);
+        ui.setTargetPosition(targetPosition);
+    };
+
+    ui = new UI({
+        onJog: jogRobot,
         onMove: (x, y, z) => {
             const position = controller.moveToRobotPosition(x, y, z);
             targetPosition.copy(position);
@@ -60,40 +78,25 @@ async function bootstrap() {
     });
 
     const gamepad = new GamepadApi(
-        (dx, dy, dz) => {
-            const position = controller.moveToRobotPosition(
-                targetPosition.x + dx,
-                targetPosition.y + dy,
-                targetPosition.z + dz
-            );
-
-            targetPosition.copy(position);
-            ui.setTargetPosition(targetPosition);
-        },
-
+        jogRobot,
         (yaw, pitch, zoom) => {
             const controls = scene.controls;
-
             controls.angleY += yaw;
-
-            controls.angleZ = Math.max(
-                controls.angleZMin,
-                Math.min(controls.angleZMax, controls.angleZ + pitch)
-            );
-            controls.distance = Math.max(
-                scene.camera.near,
-                controls.distanceMin,
-                Math.min(controls.distanceMax, controls.distance - zoom)
+            controls.angleZ = clamp(controls.angleZ + pitch, controls.angleZMin, controls.angleZMax);
+            controls.distance = clamp(
+                controls.distance - zoom,
+                Math.max(controls.distanceMin, scene.camera.near),
+                controls.distanceMax,
             );
         },
-        resetRobot
+        resetRobot,
     );
 
     ui.setTargetPosition(initialTcpPos);
     ui.updateTelemetry(initialTcpPos, robot.angles);
 
-
     scene.start((dt) => {
+        ui.update(dt);
         gamepad.update(dt);
         controller.update(dt);
         controller.getCurrentTcpRobotPosition(tcpPositionBuffer);

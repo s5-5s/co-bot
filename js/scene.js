@@ -22,10 +22,8 @@ export default class Scene {
     #rafId = null;
     /** @type {number} */
     #lastFrameTime = 0;
-    /** @type {number} */
-    #accumulator = 0;
     /** @type {((dt: number) => void) | null} */
-    #onFixedStep = null;
+    #onUpdate = null;
     /** @type {THREE.Texture[]} */
     #disposableTextures = [];
 
@@ -79,13 +77,12 @@ export default class Scene {
     }
 
     /**
-     * Запускает главный цикл обновления с фиксированным физическим шагом.
-     * @param {(dt: number) => void} onFixedStep Колбэк, вызываемый с фиксированным шагом dt
+     * Запускает единый цикл обновления и рендеринга.
+     * @param {(dt: number) => void} onUpdate
      */
-    start(onFixedStep) {
-        this.#onFixedStep = onFixedStep;
+    start(onUpdate) {
+        this.#onUpdate = onUpdate;
         this.#lastFrameTime = performance.now();
-        this.#accumulator = 0;
         this.#rafId = requestAnimationFrame(this.#loop);
     }
 
@@ -199,16 +196,10 @@ export default class Scene {
     #loop = (now) => {
         this.#rafId = requestAnimationFrame(this.#loop);
 
-        const frameDelta = Math.min((now - this.#lastFrameTime) / 1000, config.control.maxFrameDelta);
+        const dt = Math.min((now - this.#lastFrameTime) / 1000, config.control.maxFrameDelta);
         this.#lastFrameTime = now;
-        this.#accumulator += frameDelta;
 
-        const fixedStep = config.control.fixedTimeStep;
-        while (this.#accumulator >= fixedStep) {
-            this.#onFixedStep?.(fixedStep);
-            this.#accumulator -= fixedStep;
-        }
-
+        this.#onUpdate?.(dt);
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
     };
